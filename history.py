@@ -2,6 +2,23 @@
     TODO: Account for transaction fees.
 '''
 
+def get_previous_summary(filename, current_info = []):
+    with open(filename, 'ab+') as f:
+        right_now, balance, stock_price = current_info
+        # very first entry for new crypto purchase
+        if f.tell() == 0:
+            f.write(bytes(f'{right_now} -> ${balance} @ ${stock_price}\n', 'utf-8'))
+            return 0e-2, 0e-2
+        # get the last recorded stock price and portfolio balance
+        while f.read(1).decode('UTF-8') != ':':
+            f.seek(-2, 1)
+        # last recorded stock price is right after '@' character
+        buf = f.readline().decode('UTF-8').split(" ")
+
+    prev_stock_price = round(float(buf[4][1:]), 2)
+    prev_balance = round(float(buf[2][1:], 2))
+
+    return prev_stock_price, prev_balance
 
 def get_basic_history(records):
     history = {}
