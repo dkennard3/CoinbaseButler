@@ -14,10 +14,12 @@ def write_ids(account_dict, f):
     keys = list(account_dict.keys())
     last_key = keys[-1]
     keys = keys[:-1]
-    for _id in keys:
-        f.write("  \""+str(_id)+"\""+": \""+str(account_dict[_id])+"\",\n")
+    for acc in keys:
+        id = acc['id']
+        f.write("  \""+str(id)+"\""+": \""+str(account_dict[id])+"\",\n")
     f.write("  \""+str(last_key)+"\""+": \""+str(account_dict[last_key])+"\"\n")
     f.write('}\n')
+
 
 def update_accounts(client):
     active_accounts = []
@@ -27,25 +29,7 @@ def update_accounts(client):
             active_accounts.append(acc)
     with open('active_account_ids.txt', 'w') as f:
         write_ids(active_accounts, f)
-
     return active_accounts
-
-def get_previous_summary(filename):
-    with open(filename, 'ab+') as f:
-        # very first entry for new crypto purchase
-        if f.tell() == 0:
-            f.write(bytes(f'{right_now} -> ${balance} @ ${stock_price}\n', 'utf-8'))
-            return 0e-2, 0e-2
-        # get the last recorded stock price and portfolio balance
-        while f.read(1).decode('UTF-8') != ':':
-            f.seek(-2, 1)
-        # last recorded stock price is right after '@' character
-        buf = f.readline().decode('UTF-8').split(" ")
-
-    prev_stock_price = round(float(buf[4][1:]), 2)
-    prev_balance = round(float(buf[2][1:], 2))
-
-    return prev_stock_price, prev_balance
 
 
 if __name__ == "__main__":
@@ -55,11 +39,12 @@ if __name__ == "__main__":
         \nNEVER SHARE YOUR CREDENTIALS WITH ANYONE!!!\n
           ''')
     try:
-        api_key = getpass('API key: ')
-        api_secret = getpass('Secret: ')
+        api_key = getpass('--> API key: ')
+        api_secret = getpass('--> Secret: ')
         client = Client(api_key, api_secret)
-    except:
-        print('ERROR: Invalid key and/or secret\nPlease try again.')
+
+    except RuntimeError:
+        print('ERROR: Invalid key and/or secret\nPlease try again.\n')
         exit(-1)
 
     commands = ['detail', 'write', 'update']
@@ -86,30 +71,23 @@ if __name__ == "__main__":
                 elif word.upper() == 'Q':
                     exit(0)
                 elif word.upper() == 'H':
-                    help_menu()
+                    help_menu(display)
             break
 
     if 'update' in argv:
         update_accounts()
 
-    # display the current time of running tradeBot.py
-    now = datetime.now()
-    right_now = now.strftime("%m/%d/%Y %H:%M:%S")
+    right_now = (datetime.now()).strftime("%m/%d/%Y %H:%M:%S")
     curr_date = right_now.split(" ")[0]
 
     try:
         with open('active_account_ids.txt', 'r') as f:
-            active_account_ids = json.loads(f.read())
+            active_accounts = json.loads(f.read())
 
     except FileNotFoundError:
         print('No preexisting active_account_ids.txt file found')
-        print('Creating new active_account_ids.txt file...')
+        print('Creating new active_account_ids.txt file...\n')
         active_accounts = update_accounts(client)
-
-    else:
-        for _id in active_account_ids:
-            acc = client.get_account(_id)
-            active_accounts.append(acc)
 
     USDx_accounts, wallet_summary, past_balances = [[] for i in range(3)]
     total, total_profit, total_invested, total_balance_diff = [0.0 for i in range(4)]
@@ -122,16 +100,22 @@ if __name__ == "__main__":
             USDx_accounts.append(acc)
             continue
 
-        filename = f'./past_balances/{acc["currency"]}_past_balances.txt'
-        prev_stock_price, prev_balance = get_previous_summary(filename)
-        balance_diff = round(balance-prev_balance, 2)
-        total_balance_diff += balance_diff
-
-        perc, balance_diff, diff = [0e-2 for i in range(3)]
         all_activity = acc.get_transactions()['data']
-        balance = round(float(acc['native_balance']['amount']), 2)
         buy_history = hist.get_basic_history(acc.get_buys()['data'])
         sell_history = hist.get_basic_history(acc.get_sells()['data'])
+        perc, balance_diff, diff = [0.0 for i in range(3)]
+
+        curr_pair = acc['currency'] + '-USD'
+        stock_price_raw = client.get_spot_price(currency_pair=curr_pair)['amount']
+        stock_price = round(float(stock_price_raw), 10 if round(float(stock_price_raw), 2) == 0 else 2)
+
+        balance = round(float(acc['native_balance']['amount']), 2)
+        filename = f'./past_balances/{acc["currency"]}_past_balances.txt'
+        current_info = (right_now, balance, stock_price)
+        prev_stock_price, prev_balance = hist.get_previous_summary(filename, current_info)
+
+        balance_diff = round(balance-prev_balance, 2)
+        total_balance_diff += balance_diff
 
         exchange_types = hist.get_full_history(buy_history, sell_history, all_activity)
         buy_amounts = [float(item['native_amount']['amount']) for item in exchange_types['buys'].keys()]
@@ -150,16 +134,11 @@ if __name__ == "__main__":
         total_invested += i
         total_profit += p
 
-        curr_pair = acc['currency'] + '-USD'
-        stock_price_raw = client.get_spot_price(currency_pair=curr_pair)['amount']
-        stock_price = round(float(stock_price_raw), 10 if round(float(stock_price_raw), 2) == 0 else 2)
-
-        diff = round(stock_price - prev_stock_price, 2)
-
         # represent as a percentage, rather than decimal
         if int(prev_stock_price) != 0:
             perc = abs(prev_stock_price - stock_price)/prev_stock_price
         perc = round(perc*100.0, 2)
+        diff = round(stock_price - prev_stock_price, 2)
 
         if diff >= 0e-2:
             direction = 'up'
@@ -188,7 +167,7 @@ if __name__ == "__main__":
                 f'(bought minus sold) has made you ${total_profit}!'
 
             fmt.print_summary_header(stock_print, balance_print, profit_print)
-            fmt.print_full_summary(acc['currency'], active_account_ids, exchange_types)
+            fmt.print_full_summary(acc['currency'], active_accounts, exchange_types)
 
     totals = [total, total_balance_diff, total_profit, total_invested]
     fmt.print_brief_summary(wallet_summary, USDx_accounts, totals)
