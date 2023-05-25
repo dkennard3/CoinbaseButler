@@ -52,7 +52,7 @@ def print_brief_summary(wallet_summary, USDx_accounts, totals):
         total += round(float(acc['balance']['amount']), 2)
         print(acc['currency'] + ": $" + acc['balance']['amount'])
 
-    result = 'gained' if total_balance_diff > 0e-2 else 'lost' if total_balance_diff < 0e-2 else ''
+    result = 'gained' if total_balance_diff >= 0e-2 else 'lost'
 
     print(f'Total Invested: ${total_invested}')
     print(f'Total  Profits: ${total_profit}')
