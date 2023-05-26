@@ -3,6 +3,7 @@ import history as hist
 import summary_formats as fmt
 from sys import exit, argv
 from os import path, mkdir
+from coinbase.wallet import error
 from coinbase.wallet.client import Client
 from datetime import datetime
 from help_menu import help_menu
@@ -41,11 +42,15 @@ if __name__ == "__main__":
     try:
         api_key = getpass('--> API key: ')
         api_secret = getpass('--> Secret: ')
-        client = Client(api_key, api_secret)
 
     except RuntimeError:
         print('ERROR: Invalid key and/or secret\nPlease try again.\n')
         exit(-1)
+
+    try:
+        client = Client(api_key, api_secret)
+    except error.CoinbaseError:
+        raise
 
     commands = ['detail', 'write', 'update']
     display = '{'+(" | ").join(commands)+'}'
@@ -91,6 +96,7 @@ if __name__ == "__main__":
 
     USDx_accounts, wallet_summary, past_balances = [[] for i in range(3)]
     total, total_profit, total_invested, total_balance_diff = [0.0 for i in range(4)]
+    main_client = Client()
 
     if not path.exists('./past_balances'):
         mkdir('./past_balances')
